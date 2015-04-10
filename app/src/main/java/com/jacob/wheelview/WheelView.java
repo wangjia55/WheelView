@@ -9,10 +9,10 @@ import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
-import android.widget.RelativeLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -42,8 +42,18 @@ public class WheelView extends ScrollView {
 
     public static final int DEFAULT_OFFSET = 2;
 
+    public static final long DELAY = 20;
+
+    public static final int TEXT_SIZE_NORMAL = 20;
+    public static final int TEXT_SIZE_SELECTED = 24;
+
+    private int mInitY;
+
+    private AutoScrollRunnable mAutoRunnable = new AutoScrollRunnable();
+
     public static final int COLOR_NORMAL = Color.parseColor("#FFADADAD");
     public static final int COLOR_SELECT = Color.parseColor("#FF929AFF");
+    private OnWheelPickerListener mPickerListener;
 
     public WheelView(Context context) {
         this(context, null);
@@ -84,6 +94,7 @@ public class WheelView extends ScrollView {
     @Override
     protected void onScrollChanged(int l, int t, int oldl, int oldt) {
         super.onScrollChanged(l, t, oldl, oldt);
+        refreshSelectedUI(t);
     }
 
     @Override
@@ -133,19 +144,48 @@ public class WheelView extends ScrollView {
             mItems.add("");
         }
         addItemView();
+        refreshSelectedUI(0);
+    }
+
+    private void refreshSelectedUI(int y) {
+        int position = y / mItemHeight + mOffset;
+        int remain = y % mItemHeight;
+
+        if (remain > mItemHeight / 2) {
+            position = position + 1;
+        }
+
+        int size = mLinearContainer.getChildCount();
+        for (int i = 0; i < size; i++) {
+            View textView = mLinearContainer.getChildAt(i);
+            if (textView instanceof TextView) {
+                if (i == position) {
+                    ((TextView) textView).setTextColor(COLOR_SELECT);
+                    ((TextView) textView).setTextSize(TypedValue.COMPLEX_UNIT_SP, TEXT_SIZE_SELECTED);
+                } else {
+                    ((TextView) textView).setTextColor(COLOR_NORMAL);
+                    ((TextView) textView).setTextSize(TypedValue.COMPLEX_UNIT_SP, TEXT_SIZE_NORMAL);
+                }
+            }
+
+        }
     }
 
     /**
      * she
-     *
-     * @param selection
      */
     public void setSelection(int selection) {
-        this.mSelection = selection;
-        this.smoothScrollTo(0, mItemHeight * (selection + mOffset));
+        final int index = selection;
+        this.mSelection = selection+mOffset;
+        this.post(new Runnable() {
+            @Override
+            public void run() {
+                smoothScrollTo(0, mItemHeight * index);
+            }
+        });
     }
 
-    private void setOffset(int offset) {
+    public void setOffset(int offset) {
         this.mOffset = offset;
         this.mDisplayCount = mOffset * 2 + 1;
     }
@@ -156,7 +196,7 @@ public class WheelView extends ScrollView {
     private void addItemView() {
         int size = mItems.size();
         for (int i = 0; i < size; i++) {
-            TextView textView = createView1(mItems.get(i));
+            TextView textView = createView(mItems.get(i));
             mLinearContainer.addView(textView);
         }
 
@@ -170,7 +210,7 @@ public class WheelView extends ScrollView {
                 ViewGroup.LayoutParams.WRAP_CONTENT));
         textView.setGravity(Gravity.CENTER);
         textView.setSingleLine();
-        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
+        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 21);
         textView.setText(title);
         textView.setTextColor(COLOR_NORMAL);
         int padding = dpToPx(15);
@@ -184,26 +224,6 @@ public class WheelView extends ScrollView {
                     mItemHeight * mDisplayCount));
         }
         return textView;
-    }
-
-
-    private TextView createView1(String item) {
-        TextView tv = new TextView(getContext());
-        tv.setLayoutParams(new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        tv.setSingleLine(true);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
-        tv.setText(item);
-        tv.setGravity(Gravity.CENTER);
-        int padding = dpToPx(15);
-        tv.setPadding(padding, padding, padding, padding);
-        if (0 == mItemHeight) {
-            mItemHeight =  measureItemHeight(tv);
-            mLinearContainer.setLayoutParams(new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                    mItemHeight * mDisplayCount));
-            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) this.getLayoutParams();
-            this.setLayoutParams(new LinearLayout.LayoutParams(lp.width,  mItemHeight * mDisplayCount));
-        }
-        return tv;
     }
 
     private int measureItemHeight(View view) {
@@ -226,4 +246,71 @@ public class WheelView extends ScrollView {
         return view.getMeasuredHeight();
     }
 
+
+    @Override
+    public void fling(int velocityY) {
+        super.fling(velocityY / 3);
+    }
+
+
+    @Override
+    public boolean onTouchEvent(MotionEvent ev) {
+        switch (ev.getAction()) {
+            case MotionEvent.ACTION_UP:
+                startScrollAtPosition();
+                break;
+        }
+        return super.onTouchEvent(ev);
+    }
+
+    private void startScrollAtPosition() {
+        mInitY = getScrollY();
+        postDelayed(mAutoRunnable, DELAY);
+    }
+
+    private class AutoScrollRunnable implements Runnable {
+        int tempY;
+
+        @Override
+        public void run() {
+            tempY = getScrollY();
+            if (tempY - mInitY == 0) {
+                int remain = tempY % mItemHeight;
+                int position = tempY / mItemHeight;
+                if (remain == 0) {
+                    mSelection = position+mOffset;
+                    onCallBack();
+                }else{
+                    if(remain>mItemHeight/2){
+                        mSelection = position+mOffset+1;
+                        WheelView.this.smoothScrollTo(0, (position + 1) * mItemHeight);
+                        onCallBack();
+                    }else{
+                        mSelection = position+mOffset;
+                        WheelView.this.smoothScrollTo(0, position * mItemHeight);
+                        onCallBack();
+                    }
+                }
+            } else {
+                mInitY = getScrollY();
+                postDelayed(this, DELAY);
+            }
+        }
+    }
+
+    private void onCallBack() {
+        if (mPickerListener != null) {
+            mPickerListener.wheelSelect(mSelection-mOffset, mItems.get(mSelection));
+        }
+    }
+
+
+    public interface OnWheelPickerListener {
+        void wheelSelect(int position, String content);
+    }
+
+    public void setOnWheelPickerListener(OnWheelPickerListener listener) {
+        this.mPickerListener = listener;
+    }
 }
+
