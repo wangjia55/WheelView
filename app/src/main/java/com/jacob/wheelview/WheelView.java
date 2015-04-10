@@ -78,6 +78,7 @@ public class WheelView extends ScrollView {
         mDisplayCount = mOffset * 2 + 1;
 
         this.setVerticalScrollBarEnabled(false);
+        this.setOverScrollMode(OVER_SCROLL_NEVER);
         mLinearContainer = new LinearLayout(getContext());
         mLinearContainer.setOrientation(LinearLayout.VERTICAL);
         addView(mLinearContainer);
